@@ -1,0 +1,36 @@
+---
+- name: Install Beszel agent
+  hosts: all
+  become: true
+  tasks:
+    - name: Create Beszel agent directory
+      ansible.builtin.file:
+        path: /opt/beszel-agent
+        state: directory
+        mode: "0755"
+
+    - name: Create Beszel agent compose file
+      ansible.builtin.copy:
+        dest: /opt/beszel-agent/compose.yml
+        mode: "0600"
+        content: |
+          services:
+            beszel-agent:
+              image: henrygd/beszel-agent
+              container_name: beszel-agent
+              restart: unless-stopped
+              network_mode: host
+              volumes:
+                - /var/run/docker.sock:/var/run/docker.sock:ro
+                - ./beszel_agent_data:/var/lib/beszel-agent
+              environment:
+                LISTEN: "45876"
+                KEY: "{{ beszel_key }}"
+                TOKEN: "{{ beszel_token }}"
+                HUB_URL: "https://monitoring.limita-net.ru"
+
+    - name: Start Beszel agent
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: /opt/beszel-agent
+      changed_when: true
