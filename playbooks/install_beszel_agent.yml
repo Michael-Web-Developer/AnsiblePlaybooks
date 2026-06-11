@@ -25,8 +25,8 @@
                 - ./beszel_agent_data:/var/lib/beszel-agent
               environment:
                 LISTEN: "45876"
-                KEY: "{{ beszel_key }}"
-                TOKEN: "{{ beszel_token }}"
+                KEY: "{{ lookup('env', 'BESZEL_KEY') }}"
+                TOKEN: "{{ lookup('env', 'BESZEL_TOKEN') }}"
                 HUB_URL: "https://monitoring.limita-net.ru"
 
     - name: Start Beszel agent
