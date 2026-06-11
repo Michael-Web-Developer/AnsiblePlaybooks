@@ -33,4 +33,3 @@
       ansible.builtin.command:
         cmd: docker compose up -d
         chdir: /opt/beszel-agent
-      changed_when: true
