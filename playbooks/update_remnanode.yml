@@ -1,0 +1,33 @@
+---
+- name: Update remnanode on all servers
+  hosts: all
+  become: true
+  tasks:
+    - name: Pull latest remnanode images
+      ansible.builtin.command:
+        cmd: docker compose pull
+        chdir: /opt/remnanode
+      changed_when: true
+
+    - name: Stop remnanode containers
+      ansible.builtin.command:
+        cmd: docker compose down
+        chdir: /opt/remnanode
+      changed_when: true
+
+    - name: Start remnanode containers
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: /opt/remnanode
+      changed_when: true
+
+    - name: Show recent remnanode logs
+      ansible.builtin.command:
+        cmd: docker compose logs --tail 50
+        chdir: /opt/remnanode
+      changed_when: false
+      register: remnanode_logs
+
+    - name: Display remnanode logs
+      ansible.builtin.debug:
+        var: remnanode_logs.stdout_lines
