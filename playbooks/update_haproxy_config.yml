@@ -1,0 +1,32 @@
+---
+- name: Update HAProxy config on russia servers
+  hosts: russia
+  become: true
+  tasks:
+    - name: Install HAProxy
+      ansible.builtin.apt:
+        name: haproxy
+        state: present
+        update_cache: true
+
+    - name: Deploy HAProxy config
+      ansible.builtin.copy:
+        src: haproxy.cfg
+        dest: /etc/haproxy/haproxy.cfg
+        owner: root
+        group: root
+        mode: "0644"
+        validate: haproxy -c -f %s
+      notify: Reload HAProxy
+
+    - name: Ensure HAProxy is enabled and running
+      ansible.builtin.service:
+        name: haproxy
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Reload HAProxy
+      ansible.builtin.service:
+        name: haproxy
+        state: reloaded
