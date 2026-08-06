@@ -1,0 +1,75 @@
+---
+- name: Setup admin user and harden SSH on foreign servers
+  hosts: foreign
+  become: true
+  vars:
+    username: mikhail
+    user_password: "MichaelW06f7h98!!!"
+    ssh_public_key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDGsSI/6YYMQ7ZNt6MbyenCm/wyKy0YPS8Sz6zgHENXVDU4Dae3QYvZ6GkQCUuvB9svI1wzc1gi2jAst7uzvlwdx1WXVaJrY24pnlf4AP/co0foulqEkNy5dBmrAP7rVeAvIhM4dYlVkncukOd9KIqOBBFwnspYHKtObouPcXmPolaxdUuCTL4luW+CvQQoEYduELmgWI57rdYuz/jpj7kfm3AoaIk8jSxqtPS5PaFCZMtHkdySJaStiXpM7ISlwBBG6XvtZ3YJxIs7S28bgWXW/vkOKXYTix4ohTvfhLrHAjYAKR/lebWqdCFC2XACP7Jo+sQJwJbzxys4Qr1fGFjn3TardIA5VBFc1YSjyximCkB4TpL1aRT9T37B/pigzX3bAnrmW2EAdZG/oiYrfzzMvyo8VLIjg9I/2dFAgVijRatDrOWu1DRVcROT1TmNehLHsV91wi/q64bUBmkQ6FsWA/7f6gPDxgLXxK+q9Ot1KHco2IimjQUZ91CVbwTO3aM= mihailpolakov@MacBook-Pro-Apple.local"
+
+  tasks:
+    - name: Determine sudo group name (sudo on Debian, wheel on RHEL)
+      ansible.builtin.shell: getent group sudo >/dev/null && echo sudo || echo wheel
+      register: sudo_group
+      changed_when: false
+
+    - name: Create user with sudo access
+      ansible.builtin.user:
+        name: "{{ username }}"
+        shell: /bin/bash
+        create_home: true
+        groups: "{{ sudo_group.stdout }}"
+        append: true
+        # Детерминированная соль — чтобы хэш не менялся при каждом запуске
+        password: "{{ user_password | password_hash('sha512', 65534 | random(seed=inventory_hostname) | string) }}"
+      no_log: true
+
+    - name: Install SSH public key
+      ansible.posix.authorized_key:
+        user: "{{ username }}"
+        key: "{{ ssh_public_key }}"
+        state: present
+
+    - name: Create sshd drop-in config directory
+      ansible.builtin.file:
+        path: /etc/ssh/sshd_config.d
+        state: directory
+        mode: "0755"
+
+    - name: Deploy SSH hardening drop-in config
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/99-hardening.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Управляется Ansible (playbooks/setup_user.yml)
+          PermitRootLogin no
+          PasswordAuthentication no
+          PubkeyAuthentication yes
+          ChallengeResponseAuthentication no
+          KbdInteractiveAuthentication no
+          UsePAM yes
+      notify: Restart SSH
+
+    - name: Harden main sshd_config (in case drop-in dir is not included)
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?\s*{{ item.key }}\s+'
+        line: "{{ item.key }} {{ item.value }}"
+        backup: true
+      loop:
+        - { key: PermitRootLogin, value: "no" }
+        - { key: PasswordAuthentication, value: "no" }
+        - { key: PubkeyAuthentication, value: "yes" }
+      notify: Restart SSH
+
+    - name: Validate sshd configuration
+      ansible.builtin.command: sshd -t
+      changed_when: false
+
+  handlers:
+    - name: Restart SSH
+      ansible.builtin.service:
+        name: "{{ 'ssh' if ansible_facts['os_family'] == 'Debian' else 'sshd' }}"
+        state: restarted
