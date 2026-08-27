@@ -79,4 +79,4 @@ listen stats
     mode http
     stats enable
     stats uri /stats-5495
-    stats auth mikhail:Hp7p890
+    stats auth {{ haproxy_stats_user }}:{{ haproxy_stats_password }}

@@ -4,8 +4,17 @@
   become: true
   vars:
     username: mikhail
-    user_password: "MichaelW06f7h98!!!"
+    user_password: "{{ lookup('ansible.builtin.env', 'MANAGED_USER_PASSWORD') }}"
     ssh_public_key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDGsSI/6YYMQ7ZNt6MbyenCm/wyKy0YPS8Sz6zgHENXVDU4Dae3QYvZ6GkQCUuvB9svI1wzc1gi2jAst7uzvlwdx1WXVaJrY24pnlf4AP/co0foulqEkNy5dBmrAP7rVeAvIhM4dYlVkncukOd9KIqOBBFwnspYHKtObouPcXmPolaxdUuCTL4luW+CvQQoEYduELmgWI57rdYuz/jpj7kfm3AoaIk8jSxqtPS5PaFCZMtHkdySJaStiXpM7ISlwBBG6XvtZ3YJxIs7S28bgWXW/vkOKXYTix4ohTvfhLrHAjYAKR/lebWqdCFC2XACP7Jo+sQJwJbzxys4Qr1fGFjn3TardIA5VBFc1YSjyximCkB4TpL1aRT9T37B/pigzX3bAnrmW2EAdZG/oiYrfzzMvyo8VLIjg9I/2dFAgVijRatDrOWu1DRVcROT1TmNehLHsV91wi/q64bUBmkQ6FsWA/7f6gPDxgLXxK+q9Ot1KHco2IimjQUZ91CVbwTO3aM= mihailpolakov@MacBook-Pro-Apple.local"
+
+  pre_tasks:
+      - name: Validate managed user password
+        ansible.builtin.assert:
+          that:
+            - user_password | length > 0
+          fail_msg: "MANAGED_USER_PASSWORD is not configured"
+        no_log: true
+
 
   tasks:
     - name: Determine sudo group name (sudo on Debian, wheel on RHEL)
