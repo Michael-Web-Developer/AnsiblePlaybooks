@@ -52,6 +52,7 @@ frontend main_frontend
     use_backend NL_Proxy       if { req.ssl_sni -i vk.ru }
     use_backend US_Proxy       if { req.ssl_sni -i www.jsdelivr.com }
     use_backend FN_Proxy       if { req.ssl_sni -i app.limita-net.ru }
+    use_backend DE_Proxy       if { req.ssl_sni -i cloud.vk.com }
     default_backend US_Proxy
 
 # Секция распределения трафика
@@ -72,6 +73,10 @@ backend FN_Proxy
 
     # Health checks: проверяем, жив ли сервер, каждые 2 секунды
     server fn-proxy 127.0.0.1:10302 check inter 10s send-proxy-v2
+
+backend DE_Proxy
+    mode tcp
+    server de-proxy 127.0.0.1:10303 check inter 10s send-proxy-v2
 
 # Добавь это для отчета по лабе — статистика в реальном времени
 listen stats
