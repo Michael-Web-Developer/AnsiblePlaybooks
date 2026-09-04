@@ -12,6 +12,7 @@
       - 8443
     allow_beszel_listener: false
     firewall_rollback_delay: 5m
+    zabbix_server_ips: []
 
   tasks:
     - name: Configure UFW and arm an automatic rollback
@@ -36,6 +37,9 @@
           ufw allow "$public_port"/tcp comment 'VPN public'
         done
         ufw allow from {{ remnawave_panel_ip }} to any port 2222 proto tcp comment 'Remnawave panel'
+        for zabbix_ip in {{ zabbix_server_ips | join(' ') }}; do
+          ufw allow from "$zabbix_ip" to any port 10050 proto tcp comment 'Zabbix server'
+        done
         if [ "{{ allow_beszel_listener | bool | lower }}" = "true" ]; then
           ufw allow from {{ beszel_server_ip }} to any port 45876 proto tcp comment 'Beszel server'
         fi
