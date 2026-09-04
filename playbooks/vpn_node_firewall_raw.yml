@@ -11,6 +11,7 @@
       - 443
       - 8443
     allow_beszel_listener: false
+    firewall_rollback_delay: 5m
 
   tasks:
     - name: Configure UFW and arm an automatic rollback
@@ -27,7 +28,7 @@
         fi
         systemctl stop ufw-rollback.timer 2>/dev/null || true
         systemctl reset-failed ufw-rollback.service 2>/dev/null || true
-        systemd-run --unit=ufw-rollback --on-active=5m /usr/sbin/ufw --force disable
+        systemd-run --unit=ufw-rollback --on-active={{ firewall_rollback_delay }} /usr/sbin/ufw --force disable
         ufw default deny incoming
         ufw default allow outgoing
         ufw allow 22/tcp comment 'SSH key only'
