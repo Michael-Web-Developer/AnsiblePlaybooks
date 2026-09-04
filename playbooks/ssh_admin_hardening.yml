@@ -1,0 +1,85 @@
+---
+- name: Configure standard SSH administrators safely
+  hosts: "{{ hardening_target }}"
+  become: true
+  gather_facts: false
+
+  vars:
+    ssh_admin_users:
+      - alen
+      - ansi
+      - mikhail
+    enforce_ssh_hardening: false
+
+  tasks:
+    - name: Create the standard administrator accounts
+      ansible.builtin.user:
+        name: "{{ item }}"
+        shell: /bin/bash
+        create_home: true
+        groups: sudo
+        append: true
+      loop: "{{ ssh_admin_users }}"
+
+    - name: Create administrator SSH directories
+      ansible.builtin.file:
+        path: "/home/{{ item }}/.ssh"
+        state: directory
+        owner: "{{ item }}"
+        group: "{{ item }}"
+        mode: "0700"
+      loop: "{{ ssh_admin_users }}"
+
+    - name: Install the approved administrator key only
+      ansible.builtin.copy:
+        dest: "/home/{{ item }}/.ssh/authorized_keys"
+        content: "{{ lookup('ansible.builtin.file', playbook_dir + '/../files/authorized_keys/' + item + '.pub') | trim }}\n"
+        owner: "{{ item }}"
+        group: "{{ item }}"
+        mode: "0600"
+        backup: true
+      loop: "{{ ssh_admin_users }}"
+
+    - name: Configure passwordless sudo for the standard administrators
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/90-admins
+        content: |
+          alen ALL=(ALL) NOPASSWD:ALL
+          ansi ALL=(ALL) NOPASSWD:ALL
+          mikhail ALL=(ALL) NOPASSWD:ALL
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+
+    - name: Lock administrator passwords after key access is verified
+      ansible.builtin.user:
+        name: "{{ item }}"
+        password_lock: true
+      loop: "{{ ssh_admin_users }}"
+      when: enforce_ssh_hardening | bool
+
+    - name: Disable root and password-based SSH authentication
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/00-hardening.conf
+        content: |
+          PermitRootLogin no
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PubkeyAuthentication yes
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      notify: Reload SSH
+      when: enforce_ssh_hardening | bool
+
+    - name: Validate the effective SSH daemon configuration
+      ansible.builtin.command: sshd -t
+      changed_when: false
+
+  handlers:
+    - name: Reload SSH
+      ansible.builtin.service:
+        name: ssh
+        state: reloaded
