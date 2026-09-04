@@ -1,0 +1,82 @@
+---
+- name: Protect the Docker-based Remnawave panel
+  hosts: "{{ hardening_target }}"
+  become: true
+  gather_facts: false
+
+  vars:
+    remnawave_panel_ip: "72.56.83.220"
+    zabbix_server_ips:
+      - 92.53.116.12
+      - 92.53.116.111
+      - 92.53.116.119
+    docker_public_tcp_ports:
+      - 80
+      - 443
+      - 445
+      - 51821
+    docker_public_udp_ports:
+      - 51820
+    firewall_rollback_delay: 5m
+
+  tasks:
+    - name: Configure host and Docker firewall with automatic rollback
+      ansible.builtin.raw: |
+        set -eu
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq
+        apt-get install -y -qq ufw iptables
+        if [ ! -e /root/panel-ufw.before-security-20260905 ]; then
+          cp -a /etc/ufw /root/panel-ufw.before-security-20260905
+        fi
+        if [ ! -e /root/panel-iptables.before-security-20260905.rules ]; then
+          iptables-save > /root/panel-iptables.before-security-20260905.rules
+        fi
+        systemctl stop panel-firewall-rollback.timer 2>/dev/null || true
+        systemctl reset-failed panel-firewall-rollback.service 2>/dev/null || true
+        systemd-run --unit=panel-firewall-rollback --on-active={{ firewall_rollback_delay }} /bin/sh -c 'iptables -F DOCKER-USER; ip6tables -F DOCKER-USER 2>/dev/null || true; ufw --force disable'
+
+        ufw default deny incoming
+        ufw default allow outgoing
+        ufw allow 22/tcp comment 'SSH key only'
+        for p in {{ docker_public_tcp_ports | join(' ') }}; do
+          ufw allow "$p"/tcp comment 'Panel public TCP'
+        done
+        for p in {{ docker_public_udp_ports | join(' ') }}; do
+          ufw allow "$p"/udp comment 'Panel public UDP'
+        done
+        ufw allow from {{ remnawave_panel_ip }} to any port 2222 proto tcp comment 'Remnawave panel'
+        for zabbix_ip in {{ zabbix_server_ips | join(' ') }}; do
+          ufw allow from "$zabbix_ip" to any port 10050 proto tcp comment 'Zabbix server'
+        done
+        ufw logging low
+        ufw --force enable
+
+        public_if=$(ip -o route show default | awk '{print $5; exit}')
+        test -n "$public_if"
+        iptables -F DOCKER-USER
+        iptables -A DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+        for p in {{ docker_public_tcp_ports | join(' ') }}; do
+          iptables -A DOCKER-USER -i "$public_if" -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j ACCEPT
+        done
+        for p in {{ docker_public_udp_ports | join(' ') }}; do
+          iptables -A DOCKER-USER -i "$public_if" -p udp -m conntrack --ctstate NEW --ctorigdstport "$p" -j ACCEPT
+        done
+        iptables -A DOCKER-USER -i "$public_if" -j DROP
+
+        if command -v ip6tables >/dev/null 2>&1; then
+          ip6tables -F DOCKER-USER || true
+          ip6tables -A DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT || true
+          for p in {{ docker_public_tcp_ports | join(' ') }}; do
+            ip6tables -A DOCKER-USER -i "$public_if" -p tcp -m conntrack --ctstate NEW --ctorigdstport "$p" -j ACCEPT || true
+          done
+          for p in {{ docker_public_udp_ports | join(' ') }}; do
+            ip6tables -A DOCKER-USER -i "$public_if" -p udp -m conntrack --ctstate NEW --ctorigdstport "$p" -j ACCEPT || true
+          done
+          ip6tables -A DOCKER-USER -i "$public_if" -j DROP || true
+        fi
+        echo PUBLIC_INTERFACE=$public_if
+        ufw status numbered
+        iptables -S DOCKER-USER
+        echo PANEL_FIREWALL_RAW_OK
+      changed_when: true
