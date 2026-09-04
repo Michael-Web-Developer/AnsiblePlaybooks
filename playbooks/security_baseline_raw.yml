@@ -1,0 +1,92 @@
+---
+- name: Apply the initial security baseline without Python modules
+  hosts: "{{ hardening_target | default('nl_alexhost_01') }}"
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Install and configure unattended upgrades and Fail2ban
+      ansible.builtin.raw: |
+        set -eu
+        test -f /etc/debian_version
+        baseline_changed=0
+        for package_name in unattended-upgrades fail2ban python3-systemd; do
+          if ! dpkg-query -W -f='${Status}' "$package_name" 2>/dev/null | grep -q 'ok installed'; then
+            baseline_changed=1
+          fi
+        done
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq
+        apt-get install -y -qq unattended-upgrades fail2ban python3-systemd
+
+        printf '%s\n' \
+          'APT::Periodic::Update-Package-Lists "1";' \
+          'APT::Periodic::Unattended-Upgrade "1";' \
+          > /tmp/security-baseline-20auto-upgrades
+        if ! cmp -s /tmp/security-baseline-20auto-upgrades /etc/apt/apt.conf.d/20auto-upgrades; then
+          if [ -e /etc/apt/apt.conf.d/20auto-upgrades ] && [ ! -e /etc/apt/apt.conf.d/20auto-upgrades.ansible-before-security-20260904 ]; then
+            cp -a /etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/20auto-upgrades.ansible-before-security-20260904
+          fi
+          install -o root -g root -m 0644 /tmp/security-baseline-20auto-upgrades /etc/apt/apt.conf.d/20auto-upgrades
+          baseline_changed=1
+        fi
+
+        printf '%s\n' \
+          'Unattended-Upgrade::Automatic-Reboot "false";' \
+          'Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";' \
+          'Unattended-Upgrade::Remove-New-Unused-Dependencies "true";' \
+          > /tmp/security-baseline-52unattended-upgrades-local
+        if ! cmp -s /tmp/security-baseline-52unattended-upgrades-local /etc/apt/apt.conf.d/52unattended-upgrades-local; then
+          if [ -e /etc/apt/apt.conf.d/52unattended-upgrades-local ] && [ ! -e /etc/apt/apt.conf.d/52unattended-upgrades-local.ansible-before-security-20260904 ]; then
+            cp -a /etc/apt/apt.conf.d/52unattended-upgrades-local /etc/apt/apt.conf.d/52unattended-upgrades-local.ansible-before-security-20260904
+          fi
+          install -o root -g root -m 0644 /tmp/security-baseline-52unattended-upgrades-local /etc/apt/apt.conf.d/52unattended-upgrades-local
+          baseline_changed=1
+        fi
+
+        install -d -o root -g root -m 0755 /etc/fail2ban/jail.d
+        printf '%s\n' \
+          '[DEFAULT]' \
+          'ignoreip = 127.0.0.1/8 ::1 89.19.209.254' \
+          'usedns = no' \
+          'backend = systemd' \
+          'bantime = 1h' \
+          'findtime = 10m' \
+          'maxretry = 5' \
+          'bantime.increment = true' \
+          'bantime.factor = 2' \
+          'bantime.maxtime = 1d' \
+          '' \
+          '[sshd]' \
+          'enabled = true' \
+          'mode = normal' \
+          'port = ssh' \
+          > /tmp/security-baseline-sshd.local
+        fail2ban_config_changed=0
+        if ! cmp -s /tmp/security-baseline-sshd.local /etc/fail2ban/jail.d/sshd.local; then
+          if [ -e /etc/fail2ban/jail.d/sshd.local ] && [ ! -e /etc/fail2ban/jail.d/sshd.local.ansible-before-security-20260904 ]; then
+            cp -a /etc/fail2ban/jail.d/sshd.local /etc/fail2ban/jail.d/sshd.local.ansible-before-security-20260904
+          fi
+          install -o root -g root -m 0644 /tmp/security-baseline-sshd.local /etc/fail2ban/jail.d/sshd.local
+          fail2ban_config_changed=1
+          baseline_changed=1
+        fi
+
+        fail2ban-client -t
+        systemctl enable fail2ban >/dev/null
+        if [ "$fail2ban_config_changed" -eq 1 ]; then
+          systemctl restart fail2ban
+        else
+          systemctl start fail2ban
+        fi
+        systemctl enable --now apt-daily.timer apt-daily-upgrade.timer >/dev/null
+        rm -f /tmp/security-baseline-20auto-upgrades /tmp/security-baseline-52unattended-upgrades-local /tmp/security-baseline-sshd.local
+        echo "BASELINE_CHANGED=$baseline_changed"
+        systemctl is-active fail2ban apt-daily.timer apt-daily-upgrade.timer
+        fail2ban-client status sshd
+      register: security_baseline_raw
+      changed_when: "'BASELINE_CHANGED=1' in security_baseline_raw.stdout"
+
+    - name: Display baseline status
+      ansible.builtin.debug:
+        var: security_baseline_raw.stdout_lines

@@ -1,0 +1,50 @@
+---
+- name: Apply a restrictive firewall to one VPN node
+  hosts: "{{ hardening_target | default('nl_alexhost_01') }}"
+  become: true
+  gather_facts: false
+
+  vars:
+    remnawave_panel_ip: "72.56.83.220"
+    beszel_server_ip: "89.19.209.254"
+    vpn_public_tcp_ports:
+      - 443
+      - 8443
+    allow_beszel_listener: false
+
+  tasks:
+    - name: Configure UFW and arm an automatic rollback
+      ansible.builtin.raw: |
+        set -eu
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq
+        apt-get install -y -qq ufw
+        if [ ! -e /root/ufw.before-security-20260904 ]; then
+          cp -a /etc/ufw /root/ufw.before-security-20260904
+        fi
+        if [ ! -e /root/iptables.before-security-20260904.rules ]; then
+          iptables-save > /root/iptables.before-security-20260904.rules
+        fi
+        systemctl stop ufw-rollback.timer 2>/dev/null || true
+        systemctl reset-failed ufw-rollback.service 2>/dev/null || true
+        systemd-run --unit=ufw-rollback --on-active=5m /usr/sbin/ufw --force disable
+        ufw default deny incoming
+        ufw default allow outgoing
+        ufw allow 22/tcp comment 'SSH key only'
+        for public_port in {{ vpn_public_tcp_ports | join(' ') }}; do
+          ufw allow "$public_port"/tcp comment 'VPN public'
+        done
+        ufw allow from {{ remnawave_panel_ip }} to any port 2222 proto tcp comment 'Remnawave panel'
+        if [ "{{ allow_beszel_listener | bool | lower }}" = "true" ]; then
+          ufw allow from {{ beszel_server_ip }} to any port 45876 proto tcp comment 'Beszel server'
+        fi
+        ufw logging low
+        ufw --force enable
+        ufw status numbered
+        echo FIREWALL_CHANGED=1
+      register: vpn_firewall_raw
+      changed_when: "'FIREWALL_CHANGED=1' in vpn_firewall_raw.stdout"
+
+    - name: Display firewall rules
+      ansible.builtin.debug:
+        var: vpn_firewall_raw.stdout_lines
