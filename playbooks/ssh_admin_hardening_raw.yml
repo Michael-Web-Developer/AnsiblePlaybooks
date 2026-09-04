@@ -1,0 +1,35 @@
+---
+- name: Configure standard SSH administrators without Python modules
+  hosts: "{{ hardening_target }}"
+  become: true
+  gather_facts: false
+
+  vars:
+    enforce_ssh_hardening: false
+
+  tasks:
+    - name: Configure administrators and SSH policy with raw commands
+      ansible.builtin.raw: |
+        set -eu
+        for u in alen ansi mikhail; do
+          id "$u" >/dev/null 2>&1 || adduser --disabled-password --gecos "" "$u"
+          usermod -aG sudo "$u"
+          install -d -m 700 -o "$u" -g "$u" "/home/$u/.ssh"
+        done
+        echo '{{ lookup("ansible.builtin.file", playbook_dir + "/../files/authorized_keys/alen.pub") | b64encode }}' | base64 -d | install -m 600 -o alen -g alen /dev/stdin /home/alen/.ssh/authorized_keys
+        echo '{{ lookup("ansible.builtin.file", playbook_dir + "/../files/authorized_keys/ansi.pub") | b64encode }}' | base64 -d | install -m 600 -o ansi -g ansi /dev/stdin /home/ansi/.ssh/authorized_keys
+        echo '{{ lookup("ansible.builtin.file", playbook_dir + "/../files/authorized_keys/mikhail.pub") | b64encode }}' | base64 -d | install -m 600 -o mikhail -g mikhail /dev/stdin /home/mikhail/.ssh/authorized_keys
+        printf '%s\n' 'alen ALL=(ALL) NOPASSWD:ALL' 'ansi ALL=(ALL) NOPASSWD:ALL' 'mikhail ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-admins
+        chmod 440 /etc/sudoers.d/90-admins
+        visudo -cf /etc/sudoers.d/90-admins >/dev/null
+        if [ "{{ enforce_ssh_hardening | bool | lower }}" = "true" ]; then
+          passwd -l alen >/dev/null 2>&1 || true
+          passwd -l ansi >/dev/null 2>&1 || true
+          passwd -l mikhail >/dev/null 2>&1 || true
+          printf '%s\n' 'PermitRootLogin no' 'PasswordAuthentication no' 'KbdInteractiveAuthentication no' 'PubkeyAuthentication yes' > /etc/ssh/sshd_config.d/00-hardening.conf
+          chmod 644 /etc/ssh/sshd_config.d/00-hardening.conf
+          sshd -t
+          systemctl reload ssh
+        fi
+        echo SSH_ADMIN_RAW_OK
+      changed_when: true
