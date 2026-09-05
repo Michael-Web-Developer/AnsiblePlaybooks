@@ -1,0 +1,42 @@
+---
+- name: Prepare or activate an Nginx frontend for a Remnawave Reality inbound
+  hosts: "{{ hardening_target }}"
+  become: true
+  gather_facts: false
+
+  vars:
+    reality_public_port: 443
+    reality_backend_host: 127.0.0.1
+    reality_backend_port: 9443
+    activate_reality_proxy: false
+
+  tasks:
+    - name: Install and configure the Reality TCP proxy
+      ansible.builtin.raw: |
+        set -eu
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq
+        apt-get install -y -qq nginx libnginx-mod-stream
+        systemctl stop nginx
+        if [ ! -e /root/nginx.conf.before-remnawave-20260905 ]; then
+          cp -a /etc/nginx/nginx.conf /root/nginx.conf.before-remnawave-20260905
+        fi
+        if ! grep -q '^# REMNAWAVE_REALITY_STREAM$' /etc/nginx/nginx.conf; then
+          printf '\n# REMNAWAVE_REALITY_STREAM\nstream {\n    server {\n        listen {{ reality_public_port }};\n        proxy_connect_timeout 10s;\n        proxy_timeout 1h;\n        proxy_pass {{ reality_backend_host }}:{{ reality_backend_port }};\n    }\n}\n' >> /etc/nginx/nginx.conf
+        fi
+        nginx -t
+        if [ "{{ activate_reality_proxy | bool | lower }}" = "true" ]; then
+          ss -lntH | awk '{print $4}' | grep -Eq '(^|\]){{ reality_backend_host | regex_escape }}:{{ reality_backend_port }}$'
+          systemctl enable nginx >/dev/null
+          systemctl restart nginx
+          systemctl is-active nginx
+        else
+          echo REALITY_PROXY_PREPARED_NOT_ACTIVE
+        fi
+        ss -lntp | grep -E ':(443|9443) ' || true
+      register: reality_proxy_raw
+      changed_when: true
+
+    - name: Display Reality proxy status
+      ansible.builtin.debug:
+        var: reality_proxy_raw.stdout_lines
