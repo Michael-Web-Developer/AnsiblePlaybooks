@@ -49,6 +49,8 @@ frontend main_frontend
     # Логируем с SNI и временными метками
     log-format "%ci:%cp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc sni=%[var(sess.sni)]"
 
+    # XHTTP: TLS терминируется на HAProxy (см. frontend xhttp_https)
+    use_backend xhttp_tls      if { req.ssl_sni -i ru-nl.x.limita-net.ru ru-us.x.limita-net.ru }
     use_backend NL_Proxy       if { req.ssl_sni -i vk.ru }
     use_backend US_Proxy       if { req.ssl_sni -i www.jsdelivr.com }
     use_backend FN_Proxy       if { req.ssl_sni -i app.limita-net.ru }
@@ -77,6 +79,43 @@ backend FN_Proxy
 backend DE_Proxy
     mode tcp
     server de-proxy 127.0.0.1:10303 check inter 10s send-proxy-v2
+
+backend xhttp_tls
+    mode tcp
+    server termination abns@xhttp send-proxy-v2
+
+frontend xhttp_https
+    bind abns@xhttp accept-proxy ssl crt /etc/haproxy/certs/wildcard-x.limita-net.ru.pem alpn h2,http/1.1
+    mode http
+    option httplog
+    option forwardfor
+    http-request capture req.hdr(X-Forwarded-For) len 64
+    http-request capture req.hdr(Host) len 64
+    http-request capture req.hdr(Referer) len 128
+    http-request capture req.hdr(X-Media-Session) len 128
+    log-format "%ci %hr %HM %HP%HQ -> be=%b srv=%s status=%ST Tr=%Tr bytes=%B"
+    timeout http-request 30s
+    timeout http-keep-alive 15s
+    timeout client 120s
+    use_backend xhttp_nl if { ssl_fc_sni -i ru-nl.x.limita-net.ru } { path_beg /v1/media/segments/ }
+    use_backend xhttp_us if { ssl_fc_sni -i ru-us.x.limita-net.ru } { path_beg /v1/media/segments/ }
+    default_backend landing
+
+backend xhttp_nl
+    mode http
+    option http-keep-alive
+    http-reuse always
+    server nl 127.0.0.1:2002 check
+
+backend xhttp_us
+    mode http
+    option http-keep-alive
+    http-reuse always
+    server us 127.0.0.1:2003 check
+
+backend landing
+    mode http
+    http-request return status 200 content-type text/html string "<!doctype html><title>Media</title>"
 
 # Добавь это для отчета по лабе — статистика в реальном времени
 listen stats
