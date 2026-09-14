@@ -41,7 +41,6 @@
         group: root
         mode: "0600"
       no_log: true
-      notify: Reload HAProxy
 
     - name: Gather service facts
       ansible.builtin.service_facts:
