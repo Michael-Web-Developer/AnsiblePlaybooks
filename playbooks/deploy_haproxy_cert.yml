@@ -1,6 +1,11 @@
 ---
+# Деплой wildcard-сертификата *.x.limita-net.ru для HAProxy.
+# Хосты выбираются через --limit (в Semaphore — поле "Лимит" шаблона).
+# ВНИМАНИЕ: запуск без --limit пройдёт по всем серверам инвентаря.
+# PEM берётся из секрета x.limita-net.ru-pb-pk группы CERTIFICATES
+# (тип "Variable" -> lookup('vars'), тип "Environment variable" -> lookup('env')).
 - name: Deploy wildcard x.limita-net.ru certificate to HAProxy
-  hosts: "{{ target_hosts | default('none') }}"
+  hosts: all
   become: true
   vars:
     cert_var_name: x.limita-net.ru-pb-pk
