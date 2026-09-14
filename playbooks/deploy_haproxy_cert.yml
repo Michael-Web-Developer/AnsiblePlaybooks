@@ -1,0 +1,42 @@
+---
+- name: Deploy wildcard x.limita-net.ru certificate to HAProxy
+  hosts: "{{ target_hosts | default('none') }}"
+  become: true
+  vars:
+    cert_var_name: x.limita-net.ru-pb-pk
+    cert_dir: /etc/haproxy/certs
+    cert_path: "{{ cert_dir }}/wildcard-x.limita-net.ru.pem"
+    cert_pem: "{{ lookup('vars', cert_var_name, default='') | default(lookup('env', cert_var_name), true) }}"
+
+  tasks:
+    - name: Check that certificate variable is set and looks like a PEM bundle
+      ansible.builtin.assert:
+        that:
+          - cert_pem | length > 0
+          - "'BEGIN CERTIFICATE' in cert_pem"
+          - "'PRIVATE KEY' in cert_pem"
+        fail_msg: >-
+          Переменная {{ cert_var_name }} пуста или не содержит и сертификат, и приватный ключ.
+          Проверь группу переменных CERTIFICATES.
+        quiet: true
+
+    - name: Create HAProxy certs directory
+      ansible.builtin.file:
+        path: "{{ cert_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Deploy certificate PEM
+      ansible.builtin.copy:
+        content: "{{ cert_pem | trim }}\n"
+        dest: "{{ cert_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+      notify: Reload HAProxy
+
+    - name: Gather service facts
+      ansible.builtin.service_facts:
