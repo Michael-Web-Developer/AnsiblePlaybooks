@@ -50,7 +50,7 @@ frontend main_frontend
     log-format "%ci:%cp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc sni=%[var(sess.sni)]"
 
     # XHTTP: TLS терминируется на HAProxy (см. frontend xhttp_https)
-    use_backend xhttp_tls      if { req.ssl_sni -i ru-nl.x.limita-net.ru ru-us.x.limita-net.ru runl.x.limita-net.ru }
+    use_backend xhttp_tls      if { req.ssl_sni -i ru-nl.x.limita-net.ru ru-us.x.limita-net.ru }
     use_backend NL_Proxy       if { req.ssl_sni -i vk.ru }
     use_backend NL_Proxy_Test  if { req.ssl_sni -i runl.x.limita-net.ru }
     use_backend US_Proxy       if { req.ssl_sni -i www.jsdelivr.com }
@@ -93,6 +93,7 @@ backend xhttp_tls
 
 frontend xhttp_https
     bind abns@xhttp accept-proxy ssl crt /etc/haproxy/certs/wildcard-x.limita-net.ru.pem alpn h2,http/1.1
+    bind 127.0.0.1:8443 accept-proxy ssl crt /etc/haproxy/certs/wildcard-x.limita-net.ru.pem alpn h2,http/1.1
     mode http
     option httplog
     option forwardfor
