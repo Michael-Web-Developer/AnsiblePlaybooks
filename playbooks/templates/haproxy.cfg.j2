@@ -51,7 +51,8 @@ frontend main_frontend
 
     # XHTTP: TLS терминируется на HAProxy (см. frontend xhttp_https)
     use_backend xhttp_tls      if { req.ssl_sni -i ru-nl.x.limita-net.ru ru-us.x.limita-net.ru runl.x.limita-net.ru }
-    use_backend NL_Proxy       if { req.ssl_sni -i vk.ru runl.x.limita-net.ru }
+    use_backend NL_Proxy       if { req.ssl_sni -i vk.ru }
+    use_backend NL_Proxy_Test  if { req.ssl_sni -i runl.x.limita-net.ru }
     use_backend US_Proxy       if { req.ssl_sni -i www.jsdelivr.com }
     use_backend FN_Proxy       if { req.ssl_sni -i app.limita-net.ru }
     use_backend DE_Proxy       if { req.ssl_sni -i cloud.vk.com }
@@ -69,6 +70,12 @@ backend NL_Proxy
 
     # Health checks: проверяем, жив ли сервер, каждые 2 секунды
     server nl-proxy 127.0.0.1:10301 check inter 10s send-proxy-v2
+
+backend NL_Proxy_Test
+    mode tcp
+
+    # Health checks: проверяем, жив ли сервер, каждые 2 секунды
+    server nl-proxy 127.0.0.1:10305 check inter 10s send-proxy-v2
 
 backend FN_Proxy
     mode tcp
