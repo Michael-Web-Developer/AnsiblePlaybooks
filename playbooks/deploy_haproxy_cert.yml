@@ -25,6 +25,28 @@
           Проверь группу переменных CERTIFICATES.
         quiet: true
 
+    # Semaphore/окружение могут потерять переносы строк (склеить PEM в одну строку
+    # или заменить их на литеральные "\n"). Собираем PEM заново: каждый блок
+    # BEGIN/END на своей строке, base64 внутри перебит по 64 символа.
+    - name: Normalize PEM line structure
+      ansible.builtin.set_fact:
+        cert_pem_normalized: >-
+          {%- set ns = namespace(out='') -%}
+          {%- for block in (cert_pem | replace('\\n', '\n') | replace('\r', '')) | regex_findall('(?s)-----BEGIN ([A-Z0-9 ]+)-----(.*?)-----END \\1-----') -%}
+          {%- set body = block[1] | regex_replace('\\s+', '') | regex_replace('(.{64})', '\\1\n') | trim -%}
+          {%- set ns.out = ns.out ~ '-----BEGIN ' ~ block[0] ~ '-----\n' ~ body ~ '\n-----END ' ~ block[0] ~ '-----\n' -%}
+          {%- endfor -%}
+          {{ ns.out }}
+      no_log: true
+
+    - name: Check that PEM was parsed into certificate and key blocks
+      ansible.builtin.assert:
+        that:
+          - "'-----BEGIN CERTIFICATE-----' in cert_pem_normalized"
+          - "'PRIVATE KEY-----' in cert_pem_normalized"
+        fail_msg: "Не удалось разобрать PEM из {{ cert_var_name }}: не найдены блоки BEGIN/END."
+        quiet: true
+
     - name: Create HAProxy certs directory
       ansible.builtin.file:
         path: "{{ cert_dir }}"
@@ -35,7 +57,7 @@
 
     - name: Deploy certificate PEM
       ansible.builtin.copy:
-        content: "{{ cert_pem | trim }}\n"
+        content: "{{ cert_pem_normalized }}"
         dest: "{{ cert_path }}"
         owner: root
         group: root
