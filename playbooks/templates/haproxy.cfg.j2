@@ -49,10 +49,12 @@ frontend main_frontend
     # Логируем с SNI и временными метками
     log-format "%ci:%cp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc sni=%[var(sess.sni)]"
 
-    # XHTTP: TLS терминируется на HAProxy (см. frontend xhttp_https)
-    use_backend xhttp_tls      if { req.ssl_sni -i ru-nl.x.limita-net.ru ru-us.x.limita-net.ru }
+    # ru-nl / ru-us: и Reality, и XHTTP идут в Xray Reality-inbound. Он авторизует
+    # Reality-клиентов, а всё остальное (XHTTP, сканеры) пробрасывает в target =
+    # 127.0.0.1:8443 -> frontend xhttp_https (терминация TLS).
     use_backend NL_Proxy       if { req.ssl_sni -i vk.ru }
-    use_backend US_Proxy       if { req.ssl_sni -i www.jsdelivr.com }
+    use_backend NL_Proxy_Test  if { req.ssl_sni -i ru-nl.x.limita-net.ru }
+    use_backend US_Proxy       if { req.ssl_sni -i ru-us.x.limita-net.ru www.jsdelivr.com }
     use_backend FN_Proxy       if { req.ssl_sni -i app.limita-net.ru }
     use_backend DE_Proxy       if { req.ssl_sni -i cloud.vk.com }
     default_backend US_Proxy
@@ -70,6 +72,12 @@ backend NL_Proxy
     # Health checks: проверяем, жив ли сервер, каждые 2 секунды
     server nl-proxy 127.0.0.1:10301 check inter 10s send-proxy-v2
 
+backend NL_Proxy_Test
+    mode tcp
+
+    # Health checks: проверяем, жив ли сервер, каждые 2 секунды
+    server nl-proxy 127.0.0.1:10305 check inter 10s send-proxy-v2
+
 backend FN_Proxy
     mode tcp
 
@@ -80,12 +88,10 @@ backend DE_Proxy
     mode tcp
     server de-proxy 127.0.0.1:10303 check inter 10s send-proxy-v2
 
-backend xhttp_tls
-    mode tcp
-    server termination abns@xhttp send-proxy-v2
-
+# XHTTP: сюда Xray Reality (realitySettings.target = 127.0.0.1:8443, xver = 2)
+# пробрасывает неавторизованные соединения. accept-proxy — чтобы видеть реальный IP клиента.
 frontend xhttp_https
-    bind abns@xhttp accept-proxy ssl crt /etc/haproxy/certs/wildcard-x.limita-net.ru.pem alpn h2,http/1.1
+    bind 127.0.0.1:8443 accept-proxy ssl crt /etc/haproxy/certs/wildcard-x.limita-net.ru.pem alpn h2,http/1.1
     mode http
     option httplog
     option forwardfor
