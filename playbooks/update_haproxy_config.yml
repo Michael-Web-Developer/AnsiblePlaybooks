@@ -17,11 +17,18 @@
       no_log: true
 
   tasks:
+    - name: Check whether HAProxy is already installed
+      ansible.builtin.stat:
+        path: /usr/sbin/haproxy
+      register: haproxy_bin
+
+    # apt update + установка только если HAProxy на сервере ещё нет
     - name: Install HAProxy
       ansible.builtin.apt:
         name: haproxy
         state: present
         update_cache: true
+      when: not haproxy_bin.stat.exists
 
     - name: Deploy HAProxy config
       ansible.builtin.template:
