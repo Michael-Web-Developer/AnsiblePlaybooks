@@ -37,7 +37,8 @@ defaults
 
 # Секция приема трафика
 frontend main_frontend
-    bind *:443
+    # Dual-stack: один сокет принимает и IPv4, и IPv6
+    bind :::443 v4v6
     mode tcp
     option tcplog
 
